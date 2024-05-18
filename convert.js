@@ -1,50 +1,68 @@
 const fs = require('fs');
+const path = require('path');
 
-function jsonToCsv(jsonFilePath, csvFilePath) {
-    // Read the JSON file
-    fs.readFile(jsonFilePath, 'utf8', (err, data) => {
+// Function to read JSON data from a file and convert it to a CSV format string
+function jsonToCsvString(jsonData) {
+    const csvData = [];
+
+    for (const key in jsonData) {
+        if (jsonData.hasOwnProperty(key)) {
+            const amountHex = jsonData[key].amount;
+            const amountDecimal = parseInt(amountHex, 16) / 1e18;
+            csvData.push(`${key},${amountDecimal}`);
+        }
+    }
+
+    return csvData.join('\n');
+}
+
+// Function to read a JSON file and convert its content to CSV format
+function processJsonFile(filePath) {
+    return new Promise((resolve, reject) => {
+        fs.readFile(filePath, 'utf8', (err, data) => {
+            if (err) {
+                reject(`Error reading the JSON file: ${filePath} - ${err}`);
+                return;
+            }
+
+            try {
+                const jsonData = JSON.parse(data);
+                const csvString = jsonToCsvString(jsonData);
+                resolve(csvString);
+            } catch (err) {
+                reject(`Error processing the JSON data: ${filePath} - ${err}`);
+            }
+        });
+    });
+}
+
+// Function to read all JSON files in a folder, process them, and combine the results into a single CSV
+function processJsonFolder(folderPath, outputCsvFilePath) {
+    fs.readdir(folderPath, (err, files) => {
         if (err) {
-            console.error('Error reading the JSON file:', err);
+            console.error(`Error reading the folder: ${folderPath} - ${err}`);
             return;
         }
 
-        try {
-            // Parse the JSON data
-            const jsonData = JSON.parse(data);
-            
-            // Initialize CSV data array
-            const csvData = [];
+        const jsonFiles = files.filter(file => path.extname(file) === '.json');
+        const csvPromises = jsonFiles.map(file => processJsonFile(path.join(folderPath, file)));
 
-            // Iterate over each key in the JSON data
-            for (const key in jsonData) {
-                if (jsonData.hasOwnProperty(key)) {
-                    // Convert the amount from hex to decimal and divide by 1e18
-                    const amountHex = jsonData[key].amount;
-                    const amountDecimal = parseInt(amountHex, 16) / 1e18;
-
-                    // Format the data and add to csvData array
-                    csvData.push(`${key},${amountDecimal}`);
-                }
-            }
-
-            // Join the CSV data array with newlines
-            const csvString = csvData.join('\n');
-
-            // Write the CSV string to the output file
-            fs.writeFile(csvFilePath, csvString, 'utf8', (err) => {
-                if (err) {
-                    console.error('Error writing the CSV file:', err);
-                } else {
-                    console.log('CSV file has been saved.');
-                }
-            });
-        } catch (err) {
-            console.error('Error processing the JSON data:', err);
-        }
+        Promise.all(csvPromises)
+            .then(csvStrings => {
+                const combinedCsv = csvStrings.join('\n');
+                fs.writeFile(outputCsvFilePath, combinedCsv, 'utf8', (err) => {
+                    if (err) {
+                        console.error(`Error writing the CSV file: ${outputCsvFilePath} - ${err}`);
+                    } else {
+                        console.log('Combined CSV file has been saved.');
+                    }
+                });
+            })
+            .catch(error => console.error(`Error processing JSON files: ${error}`));
     });
 }
 
 // Usage example
-const jsonFilePath = '00.json';
-const csvFilePath = '00.csv';
-jsonToCsv(jsonFilePath, csvFilePath);
+const folderPath = 'path/to/your/json/folder'; // Replace with the path to your folder containing JSON files
+const outputCsvFilePath = 'combined_output.csv'; // Replace with the desired output CSV file path
+processJsonFolder(folderPath, outputCsvFilePath);
